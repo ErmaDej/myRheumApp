@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Zoom stays available: disabling it fails WCAG 1.4.4 and hurts low-vision readers. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="myRheumApp — private, offline-aware rheumatology symptom, medication, laboratory and appointment journal."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#101C2B" />
+    <meta name="msapplication-navbutton-color" content="#101C2B" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="#101C2B" />
+    <title>myRheumApp</title>
+    <!-- The web app manifest and service worker registration are injected at build time
+         by vite-plugin-pwa; linking them by hand produced 404s in production. -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

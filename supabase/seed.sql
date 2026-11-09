@@ -1,0 +1,5 @@
+-- Intentionally empty.
+--
+-- myRheumApp seeds demo data in the browser (see src/data/seed.ts) so that the demo
+-- experience never requires inserting synthetic patient records into a real database.
+-- The SQL tests in supabase/tests/ create their own disposable fixtures.

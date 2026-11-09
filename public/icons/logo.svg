@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="myRheumApp logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17293d"/>
+      <stop offset="1" stop-color="#0a1420"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#92dfcf"/>
+      <stop offset="1" stop-color="#46bfa9"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g stroke="url(#teal)" stroke-width="26" stroke-linecap="round" fill="none">
+    <path d="M256 96v86"/>
+    <path d="M256 182c0 26-34 34-34 60s34 34 34 60-34 34-34 60 34 34 34 54"/>
+    <path d="M256 182c0 26 34 34 34 60s-34 34-34 60 34 34 34 60-34 34-34 54"/>
+  </g>
+  <g fill="#75d8c5">
+    <circle cx="256" cy="96" r="20"/>
+    <circle cx="222" cy="242" r="12" opacity="0.9"/>
+    <circle cx="290" cy="242" r="12" opacity="0.9"/>
+    <circle cx="222" cy="362" r="12" opacity="0.9"/>
+    <circle cx="290" cy="362" r="12" opacity="0.9"/>
+    <circle cx="256" cy="416" r="16"/>
+  </g>
+  <path d="M96 256h48M368 256h48" stroke="#c8b7fa" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+</svg>
