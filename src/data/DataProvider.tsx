@@ -10,7 +10,12 @@ import {
 import { createAppStore, type AppState, type AppStore } from '@/data/store'
 import { createDemoData, emptyData } from '@/data/seed'
 import { readLocalState, readOutbox } from '@/data/localDb'
-import { pushOutboxItem, supabaseConfigured } from '@/data/remote'
+import {
+  fetchRemoteSnapshot,
+  mergeRemoteSnapshot,
+  pushOutboxItem,
+  supabaseConfigured,
+} from '@/data/remote'
 import { useAuth } from '@/data/auth'
 import { uid } from '@/lib/utils'
 
@@ -18,6 +23,8 @@ interface DataContextValue {
   state: AppState
   store: AppStore
   syncNow: () => Promise<void>
+  /** Pull the account snapshot from Supabase and merge it over local state. */
+  refreshFromRemote: () => Promise<void>
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
@@ -80,6 +87,35 @@ export const DataProvider = ({
     }
   }, [user, snapshot.hydrated, snapshot.data.profile.id, store])
 
+  // Pull the account once per session, after queued edits have uploaded, so a
+  // new device shows the records imported in Supabase without losing offline work.
+  const pullingRef = useRef(false)
+  const refreshFromRemote = useMemo(
+    () => async () => {
+      if (!supabaseConfigured || !user || user.mode !== 'remote') return
+      if (pullingRef.current) return
+      pullingRef.current = true
+      try {
+        const remote = await fetchRemoteSnapshot()
+        if (remote) {
+          store.replaceData(mergeRemoteSnapshot(store.getSnapshot().data, remote))
+        }
+      } catch (error) {
+        console.warn('Could not refresh from your account.', error)
+      } finally {
+        pullingRef.current = false
+      }
+    },
+    [store, user],
+  )
+
+  useEffect(() => {
+    if (!snapshot.hydrated) return
+    if (!supabaseConfigured || !user || user.mode !== 'remote') return
+    if (snapshot.outbox.length > 0) return
+    void refreshFromRemote()
+  }, [snapshot.hydrated, snapshot.outbox.length, user, refreshFromRemote])
+
   // Flush queued mutations while online.
   const syncingRef = useRef(false)
   const syncNow = useMemo(
@@ -119,8 +155,8 @@ export const DataProvider = ({
   }, [snapshot.online, snapshot.outbox.length, user, syncNow])
 
   const value = useMemo<DataContextValue>(
-    () => ({ state: snapshot, store, syncNow }),
-    [snapshot, store, syncNow],
+    () => ({ state: snapshot, store, syncNow, refreshFromRemote }),
+    [snapshot, store, syncNow, refreshFromRemote],
   )
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>

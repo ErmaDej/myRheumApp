@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { FileText, FolderOpen, Plus, Trash2 } from 'lucide-react'
 import { useData } from '@/data/DataProvider'
 import { useToast } from '@/hooks/useToast'
-import type { DocumentCategory, MedicalDocument, Provenance } from '@/data/types'
+import { AttachmentField, AttachmentList } from '@/components/attachments/AttachmentUpload'
+import { supabaseConfigured, uploadAttachmentFile } from '@/data/remote'
+import type { AttachmentKind, DocumentCategory, MedicalDocument, Provenance } from '@/data/types'
 import {
   Badge,
   Button,
@@ -40,6 +42,14 @@ interface DocForm {
   source: Provenance
 }
 
+const attachmentKindFor = (category: DocumentCategory): AttachmentKind => {
+  if (category === 'lab-report') return 'lab-report'
+  if (category === 'imaging') return 'imaging'
+  if (category === 'prescription') return 'prescription'
+  if (category === 'referral') return 'referral'
+  return 'other'
+}
+
 const emptyForm = (): DocForm => ({
   title: '',
   category: 'note',
@@ -59,6 +69,7 @@ export const MedicalRecords = () => {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<DocumentCategory | 'all'>('all')
   const [deleteTarget, setDeleteTarget] = useState<MedicalDocument | null>(null)
+  const [file, setFile] = useState<File | null>(null)
 
   const documents = useMemo(
     () =>
@@ -73,7 +84,7 @@ export const MedicalRecords = () => {
     setError(null)
   }
 
-  const save = (event: React.FormEvent) => {
+  const save = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!form.title.trim()) return setError('Give the record a clear title.')
     if (!form.occurredOn) return setError('Choose the date on the document.')
@@ -91,12 +102,39 @@ export const MedicalRecords = () => {
     }
 
     store.saveDocument(document)
+
+    if (file && supabaseConfigured) {
+      try {
+        const storagePath = await uploadAttachmentFile(data.profile.id, file)
+        store.saveAttachment({
+          id: uid('att'),
+          patientId: data.profile.id,
+          documentId: document.id,
+          storageBucket: 'medical-documents',
+          storagePath,
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          byteSize: file.size,
+          kind: attachmentKindFor(document.category),
+          capturedOn: form.occurredOn,
+          createdAt: new Date().toISOString(),
+        })
+      } catch (cause) {
+        toast({
+          title: 'Record saved, file not uploaded',
+          description: cause instanceof Error ? cause.message : 'Attach the file again from the record card.',
+          variant: 'warning',
+        })
+      }
+    }
+
     toast({
       title: 'Record saved',
       description: 'Source is preserved so patient-entered text is never mistaken for a clinician diagnosis.',
       variant: 'success',
     })
     setForm(emptyForm())
+    setFile(null)
     setOpen(false)
   }
 
@@ -193,6 +231,31 @@ export const MedicalRecords = () => {
               ) : (
                 <p className="mt-2 text-xs italic text-muted">No description recorded.</p>
               )}
+              {(() => {
+                const files = data.attachments.filter(
+                  (attachment) => attachment.documentId === document.id,
+                )
+                return (
+                  <div className="mt-3 space-y-2 border-t border-navy-900/10 pt-2.5 dark:border-white/10">
+                    <AttachmentList
+                      attachments={files}
+                      emptyHint="No original file attached to this record."
+                    />
+                    <details className="text-[11px]">
+                      <summary className="cursor-pointer font-semibold text-teal-700 dark:text-teal-300">
+                        Attach a PDF or photograph
+                      </summary>
+                      <div className="mt-2">
+                        <AttachmentField
+                          patientId={data.profile.id}
+                          kind={attachmentKindFor(document.category)}
+                          documentId={document.id}
+                        />
+                      </div>
+                    </details>
+                  </div>
+                )
+              })()}
             </Card>
           ))}
         </div>
@@ -201,9 +264,9 @@ export const MedicalRecords = () => {
       <Card className="flex items-start gap-3 p-4 text-[11px] leading-relaxed text-muted">
         <FileText className="mt-0.5 size-4 shrink-0" aria-hidden />
         <p>
-          Original PDFs and photographs of paper reports require the private Supabase Storage bucket described in
-          <code className="mx-1 rounded bg-navy-900/5 px-1 py-0.5 dark:bg-white/10">supabase/migrations</code>.
-          Uploads are intentionally disabled in this local build so no document is stored in a public location.
+          Original PDFs and photographs are stored in the private <strong>medical-documents</strong> bucket under
+          your own folder. Links are short-lived signed URLs, never public paths. Transcription stays separate
+          from the file so a scan is never mistaken for interpreted data.
         </p>
       </Card>
 
@@ -268,6 +331,21 @@ export const MedicalRecords = () => {
               </Select>
             </Field>
           </div>
+
+          <Field
+            label="Original file"
+            htmlFor="docFile"
+            optional
+            hint="PDF, JPEG, PNG or WebP up to 25 MB. Stored privately under your account."
+          >
+            <input
+              id="docFile"
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              className="w-full rounded-xl border border-navy-900/15 bg-white px-3 py-2 text-xs text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-navy-900 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-white dark:border-white/15 dark:bg-navy-900/50 dark:file:bg-teal-400 dark:file:text-navy-950"
+            />
+          </Field>
 
           <Field label="Exact wording or summary" htmlFor="docBody" optional>
             <Textarea

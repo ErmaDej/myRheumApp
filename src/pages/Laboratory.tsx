@@ -1,8 +1,20 @@
-import { useMemo, useState } from 'react'
-import { Download, FlaskConical, Info, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import {
+  Download,
+  FilePlus2,
+  FlaskConical,
+  Info,
+  Paperclip,
+  Plus,
+  Trash2,
+  TriangleAlert,
+} from 'lucide-react'
 import { useData } from '@/data/DataProvider'
 import { useToast } from '@/hooks/useToast'
-import type { LabResult, Provenance } from '@/data/types'
+import { AttachmentField, AttachmentList } from '@/components/attachments/AttachmentUpload'
+import { supabaseConfigured, uploadAttachmentFile } from '@/data/remote'
+import type { ImportBatch, LabPanel, LabResult, Provenance } from '@/data/types'
 import { isOutOfRange, labSeries, latestLabs } from '@/lib/analytics'
 import { downloadFile, labResultsCsv } from '@/lib/reports/csv'
 import {
@@ -47,6 +59,44 @@ const emptyLab = (): LabForm => ({
   notes: '',
 })
 
+interface ImportRowDraft {
+  key: string
+  testName: string
+  value: string
+  unit: string
+  referenceLow: string
+  referenceHigh: string
+  referenceText: string
+}
+
+interface ImportDraft {
+  title: string
+  collectedAt: string
+  laboratory: string
+  source: Provenance
+  notes: string
+  rows: ImportRowDraft[]
+}
+
+const blankRow = (): ImportRowDraft => ({
+  key: uid('row'),
+  testName: '',
+  value: '',
+  unit: '',
+  referenceLow: '',
+  referenceHigh: '',
+  referenceText: '',
+})
+
+const emptyImport = (): ImportDraft => ({
+  title: '',
+  collectedAt: todayInputValue(),
+  laboratory: '',
+  source: 'imported',
+  notes: '',
+  rows: [blankRow(), blankRow(), blankRow()],
+})
+
 const rangeLabel = (lab: LabResult): string => {
   if (lab.referenceText) return lab.referenceText
   if (lab.referenceLow !== undefined && lab.referenceHigh !== undefined)
@@ -66,6 +116,30 @@ export const Laboratory = () => {
   const [error, setError] = useState<string | null>(null)
   const [selectedTest, setSelectedTest] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<LabResult | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importDraft, setImportDraft] = useState<ImportDraft>(emptyImport)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const [expandedPanel, setExpandedPanel] = useState<string | null>(null)
+
+  // The command palette links here with ?new=1 / ?import=1.
+  useEffect(() => {
+    if (params.get('new') === '1') setOpen(true)
+    if (params.get('import') === '1') setImportOpen(true)
+    if (params.get('new') || params.get('import')) {
+      const next = new URLSearchParams(params)
+      next.delete('new')
+      next.delete('import')
+      setParams(next, { replace: true })
+    }
+  }, [params, setParams])
+
+  const panels = useMemo(
+    () => [...data.labPanels].sort((a, b) => b.collectedAt.localeCompare(a.collectedAt)),
+    [data.labPanels],
+  )
 
   const latest = useMemo(() => latestLabs(data.labResults), [data.labResults])
   const activeTest = selectedTest ?? latest[0]?.testName ?? null
@@ -123,6 +197,117 @@ export const Laboratory = () => {
     setSelectedTest(lab.testName)
   }
 
+  const updateImport = <K extends keyof ImportDraft>(key: K, value: ImportDraft[K]) => {
+    setImportDraft((prev) => ({ ...prev, [key]: value }))
+    setImportError(null)
+  }
+
+  const updateRow = (key: string, patch: Partial<ImportRowDraft>) => {
+    setImportDraft((prev) => ({
+      ...prev,
+      rows: prev.rows.map((row) => (row.key === key ? { ...row, ...patch } : row)),
+    }))
+    setImportError(null)
+  }
+
+  const saveImport = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!importDraft.title.trim()) return setImportError('Give the report a title.')
+    if (!importDraft.collectedAt) return setImportError('Choose the collection date.')
+
+    const filled = importDraft.rows.filter(
+      (row) => row.testName.trim() || row.value.trim() || row.unit.trim(),
+    )
+    if (filled.length === 0) return setImportError('Add at least one result from the report.')
+    for (const row of filled) {
+      if (!row.testName.trim() || !row.value.trim() || !row.unit.trim()) {
+        return setImportError('Every row needs a test name, value and unit.')
+      }
+      if (Number.isNaN(Number(row.value))) {
+        return setImportError(`“${row.testName}” needs a numeric value. Enter text results as a separate record.`)
+      }
+    }
+
+    setImporting(true)
+    const now = new Date().toISOString()
+    const panel: LabPanel = {
+      id: uid('panel'),
+      patientId: data.profile.id,
+      title: importDraft.title.trim(),
+      collectedAt: new Date(`${importDraft.collectedAt}T08:00:00`).toISOString(),
+      laboratory: importDraft.laboratory.trim() || undefined,
+      source: importDraft.source,
+      notes: importDraft.notes.trim() || undefined,
+      createdAt: now,
+    }
+    const batch: ImportBatch = {
+      id: uid('batch'),
+      patientId: data.profile.id,
+      label: panel.title,
+      source: 'manual',
+      status: 'complete',
+      itemCount: filled.length,
+      notes: importFile ? `Original file: ${importFile.name}` : undefined,
+      createdAt: now,
+    }
+    const results: LabResult[] = filled.map((row) => ({
+      id: uid('lab'),
+      patientId: data.profile.id,
+      panelId: panel.id,
+      testName: row.testName.trim(),
+      value: Number(row.value),
+      unit: row.unit.trim(),
+      referenceLow: row.referenceLow.trim() === '' ? undefined : Number(row.referenceLow),
+      referenceHigh: row.referenceHigh.trim() === '' ? undefined : Number(row.referenceHigh),
+      referenceText: row.referenceText.trim() || undefined,
+      collectedAt: panel.collectedAt,
+      laboratory: panel.laboratory,
+      source: importDraft.source,
+      notes: importDraft.notes.trim() || undefined,
+      createdAt: now,
+    }))
+
+    store.saveImportBatch(batch)
+    store.saveLabReport(panel, results)
+
+    if (importFile && supabaseConfigured) {
+      try {
+        const storagePath = await uploadAttachmentFile(data.profile.id, importFile)
+        store.saveAttachment({
+          id: uid('att'),
+          patientId: data.profile.id,
+          labPanelId: panel.id,
+          importBatchId: batch.id,
+          storageBucket: 'medical-documents',
+          storagePath,
+          fileName: importFile.name,
+          mimeType: importFile.type || 'application/pdf',
+          byteSize: importFile.size,
+          kind: 'lab-report',
+          capturedOn: importDraft.collectedAt,
+          createdAt: now,
+        })
+      } catch (cause) {
+        toast({
+          title: 'Report saved, file not uploaded',
+          description: cause instanceof Error ? cause.message : 'Attach the original from the panel later.',
+          variant: 'warning',
+        })
+      }
+    }
+
+    toast({
+      title: `Report imported with ${results.length} result${results.length === 1 ? '' : 's'}`,
+      description: 'Values, units and the report grouping are stored; nothing was converted or estimated.',
+      variant: 'success',
+    })
+    setImportDraft(emptyImport())
+    setImportFile(null)
+    setImporting(false)
+    setImportOpen(false)
+    setSelectedTest(results[0]?.testName ?? null)
+  }
+
   const exportCsv = () => {
     downloadFile(`myrheum-labs-${todayInputValue()}.csv`, labResultsCsv(data.labResults))
     toast({ title: 'Laboratory CSV downloaded', variant: 'success' })
@@ -137,6 +322,9 @@ export const Laboratory = () => {
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={exportCsv} disabled={data.labResults.length === 0}>
               <Download className="size-3.5" aria-hidden /> CSV
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+              <FilePlus2 className="size-3.5" aria-hidden /> Import report
             </Button>
             <Button size="sm" onClick={() => setOpen(true)}>
               <Plus className="size-3.5" aria-hidden /> Add result
@@ -241,6 +429,107 @@ export const Laboratory = () => {
           ) : null}
         </Card>
       </div>
+
+      {/* Report panels keep one venepuncture together with its original file. */}
+      <Card className="p-4 sm:p-5">
+        <CardHeader
+          title="Report panels"
+          subtitle="Results from one report stay grouped, with the original PDF in your private bucket."
+          action={<Paperclip className="size-4 text-muted" aria-hidden />}
+        />
+        <div className="mt-3 space-y-2">
+          {panels.length === 0 ? (
+            <EmptyState
+              icon={<FilePlus2 className="size-5" aria-hidden />}
+              title="No reports imported yet"
+              description="Import a printed or PDF report once and enter every value as it was reported. You can attach the original file."
+              action={
+                <Button size="sm" onClick={() => setImportOpen(true)}>
+                  Import a report
+                </Button>
+              }
+            />
+          ) : (
+            panels.map((panel) => {
+              const panelResults = data.labResults.filter((result) => result.panelId === panel.id)
+              const panelAttachments = data.attachments.filter(
+                (attachment) => attachment.labPanelId === panel.id,
+              )
+              const expanded = expandedPanel === panel.id
+              return (
+                <div
+                  key={panel.id}
+                  className="rounded-xl border border-navy-900/10 dark:border-white/10"
+                >
+                  <div className="flex items-start gap-2 p-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPanel(expanded ? null : panel.id)}
+                      aria-expanded={expanded}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <p className="truncate text-sm font-medium text-ink">{panel.title}</p>
+                      <p className="mt-0.5 text-[11px] text-muted">
+                        {formatDate(panel.collectedAt)}
+                        {panel.laboratory ? ` · ${panel.laboratory}` : ''} · {panelResults.length} result
+                        {panelResults.length === 1 ? '' : 's'}
+                        {panelAttachments.length > 0 ? ' · file attached' : ''}
+                      </p>
+                    </button>
+                    <Badge tone={panel.source === 'clinician' ? 'teal' : 'lavender'}>{panel.source}</Badge>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        store.deleteLabPanel(panel.id)
+                        toast({
+                          title: 'Panel grouping removed',
+                          description: 'The individual results are kept.',
+                          variant: 'success',
+                        })
+                      }}
+                      className="rounded-lg p-1.5 text-muted hover:bg-danger-500/10 hover:text-danger-600"
+                      aria-label={`Remove panel ${panel.title}`}
+                    >
+                      <Trash2 className="size-3.5" aria-hidden />
+                    </button>
+                  </div>
+                  {expanded ? (
+                    <div className="space-y-3 border-t border-navy-900/10 p-3 dark:border-white/10">
+                      {panel.notes ? (
+                        <p className="whitespace-pre-line text-xs text-muted">{panel.notes}</p>
+                      ) : null}
+                      <ul className="grid gap-1.5 sm:grid-cols-2">
+                        {panelResults.map((result) => (
+                          <li
+                            key={result.id}
+                            className="flex items-baseline justify-between gap-2 rounded-lg bg-navy-900/5 px-2.5 py-1.5 dark:bg-white/5"
+                          >
+                            <span className="truncate text-xs text-ink">{result.testName}</span>
+                            <span className="shrink-0 text-xs font-semibold tabular-nums text-ink">
+                              {result.value}{' '}
+                              <span className="text-[10px] font-normal text-muted">{result.unit}</span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <AttachmentList
+                        attachments={panelAttachments}
+                        emptyHint="No original file attached to this report."
+                      />
+                      <AttachmentField
+                        patientId={data.profile.id}
+                        kind="lab-report"
+                        labPanelId={panel.id}
+                        importBatchId={panelAttachments[0]?.importBatchId}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })
+          )}
+        </div>
+      </Card>
 
       {/* Recent rows */}
       <Card className="p-4 sm:p-5">
@@ -446,6 +735,169 @@ export const Laboratory = () => {
             {deleteTarget.testName} · {deleteTarget.value} {deleteTarget.unit} · {formatDate(deleteTarget.collectedAt)}
           </p>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import a laboratory report"
+        description="Transcribe every value exactly as reported and keep the original file with it. Nothing is converted or estimated."
+        wide
+      >
+        <form onSubmit={(event) => void saveImport(event)} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Report title" htmlFor="importTitle">
+              <Input
+                id="importTitle"
+                value={importDraft.title}
+                onChange={(event) => updateImport('title', event.target.value)}
+                placeholder="e.g. Full blood count and CRP"
+                required
+              />
+            </Field>
+            <Field label="Collection date" htmlFor="importDate">
+              <Input
+                id="importDate"
+                type="date"
+                value={importDraft.collectedAt}
+                max={todayInputValue()}
+                onChange={(event) => updateImport('collectedAt', event.target.value)}
+                required
+              />
+            </Field>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Laboratory" htmlFor="importLab" optional>
+              <Input
+                id="importLab"
+                value={importDraft.laboratory}
+                onChange={(event) => updateImport('laboratory', event.target.value)}
+                placeholder="As printed on the report"
+              />
+            </Field>
+            <Field label="Source" htmlFor="importSource">
+              <Select
+                id="importSource"
+                value={importDraft.source}
+                onChange={(event) => updateImport('source', event.target.value as Provenance)}
+              >
+                <option value="imported">Imported from report</option>
+                <option value="patient">Patient-entered</option>
+                <option value="clinician">Clinician-entered</option>
+              </Select>
+            </Field>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-ink">Results on this report</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => updateImport('rows', [...importDraft.rows, blankRow()])}
+              >
+                <Plus className="size-3.5" aria-hidden /> Add row
+              </Button>
+            </div>
+            {importDraft.rows.map((row, index) => (
+              <div
+                key={row.key}
+                className="grid grid-cols-2 gap-2 rounded-xl border border-navy-900/10 p-2 sm:grid-cols-[1.4fr_0.7fr_0.7fr_0.7fr_0.7fr_auto] dark:border-white/10"
+              >
+                <Input
+                  aria-label={`Test name, row ${index + 1}`}
+                  value={row.testName}
+                  onChange={(event) => updateRow(row.key, { testName: event.target.value })}
+                  placeholder="Test"
+                />
+                <Input
+                  aria-label={`Value, row ${index + 1}`}
+                  type="number"
+                  step="any"
+                  value={row.value}
+                  onChange={(event) => updateRow(row.key, { value: event.target.value })}
+                  placeholder="Value"
+                />
+                <Input
+                  aria-label={`Unit, row ${index + 1}`}
+                  value={row.unit}
+                  onChange={(event) => updateRow(row.key, { unit: event.target.value })}
+                  placeholder="Unit"
+                />
+                <Input
+                  aria-label={`Reference low, row ${index + 1}`}
+                  type="number"
+                  step="any"
+                  value={row.referenceLow}
+                  onChange={(event) => updateRow(row.key, { referenceLow: event.target.value })}
+                  placeholder="Ref low"
+                />
+                <Input
+                  aria-label={`Reference high, row ${index + 1}`}
+                  type="number"
+                  step="any"
+                  value={row.referenceHigh}
+                  onChange={(event) => updateRow(row.key, { referenceHigh: event.target.value })}
+                  placeholder="Ref high"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateImport(
+                      'rows',
+                      importDraft.rows.filter((item) => item.key !== row.key),
+                    )
+                  }
+                  className="justify-self-end rounded-lg p-2 text-muted hover:bg-danger-500/10 hover:text-danger-600"
+                  aria-label={`Remove row ${index + 1}`}
+                  disabled={importDraft.rows.length === 1}
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <Field
+            label="Original report file"
+            htmlFor="importFile"
+            optional
+            hint="PDF or photograph. Uploaded to your private bucket, never a public URL."
+          >
+            <input
+              id="importFile"
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+              className="w-full rounded-xl border border-navy-900/15 bg-white px-3 py-2 text-xs text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-navy-900 file:px-2.5 file:py-1.5 file:text-xs file:font-semibold file:text-white dark:border-white/15 dark:bg-navy-900/50 dark:file:bg-teal-400 dark:file:text-navy-950"
+            />
+          </Field>
+
+          <Field label="Notes" htmlFor="importNotes" optional>
+            <Input
+              id="importNotes"
+              value={importDraft.notes}
+              onChange={(event) => updateImport('notes', event.target.value)}
+              placeholder="e.g. Fasting sample; report from Dr.…"
+            />
+          </Field>
+
+          {importError ? (
+            <p role="alert" className="text-xs font-medium text-danger-600 dark:text-danger-400">
+              {importError}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setImportOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={importing}>
+              {importing ? 'Saving report…' : 'Save report'}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   )

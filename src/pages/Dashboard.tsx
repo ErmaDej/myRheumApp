@@ -1,9 +1,11 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  Activity,
   ArrowRight,
   CalendarDays,
   ChevronRight,
+  ClipboardCheck,
   CircleCheck,
   Clock3,
   FlaskConical,
@@ -24,6 +26,8 @@ import {
   latestAssessment,
   latestLabs,
   outstandingTasks,
+  recentFlare,
+  reportReadiness,
   upcomingAppointment,
 } from '@/lib/analytics'
 import { buildWeeklySummary, defaultRange } from '@/lib/reports/summary'
@@ -58,6 +62,9 @@ export const Dashboard = () => {
   const pain = useMemo(() => changeFromBaseline(data, (entry) => entry.pain), [data])
   const stiffness7 = week.stiffness.mean
   const adherence = useMemo(() => adherenceRate(data.doseEvents, 7), [data.doseEvents])
+  const flare = useMemo(() => recentFlare(data.symptomEntries), [data.symptomEntries])
+  const readiness = useMemo(() => reportReadiness(data), [data])
+  const gaps = readiness.items.filter((item) => !item.done)
 
   const chartData = useMemo(() => {
     const painSeries = dailySeries(data.symptomEntries, (entry) => entry.pain, 30)
@@ -171,6 +178,73 @@ export const Dashboard = () => {
           treating clinician or urgent care rather than waiting for a reminder.
         </InlineAlert>
       ) : null}
+
+      {/* Record quality + a descriptive flare pattern, both from recorded data only. */}
+      <Card className="p-4 sm:p-5">
+        <div className="grid gap-5 sm:grid-cols-[auto_1fr]">
+          <div className="min-w-40">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+              <ClipboardCheck className="size-3.5" aria-hidden /> Consultation readiness
+            </p>
+            <p className="mt-1 font-display text-3xl font-bold tracking-tight text-ink">
+              {readiness.percent}%
+            </p>
+            <div
+              className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-navy-900/10 dark:bg-white/15"
+              role="progressbar"
+              aria-valuenow={readiness.percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Report readiness checklist"
+            >
+              <div
+                className="h-full rounded-full bg-teal-500 transition-all"
+                style={{ width: `${readiness.percent}%` }}
+              />
+            </div>
+            <Link
+              to="/reports"
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 dark:text-teal-300"
+            >
+              Open exports <ArrowRight className="size-3" aria-hidden />
+            </Link>
+          </div>
+
+          <div className="space-y-2">
+            <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              <Activity className="size-3.5 shrink-0" aria-hidden />
+              {flare ? (
+                <>
+                  <Badge tone="amber">
+                    Pain ≥7 for {flare.days} day{flare.days === 1 ? '' : 's'}
+                  </Badge>
+                  <span>
+                    {formatDate(flare.start)} – {formatDate(flare.end)} · peak {flare.peak}/10. A descriptive
+                    pattern in your own record, not a diagnosis.
+                  </span>
+                </>
+              ) : (
+                <span>No run of high-pain days recorded. Gaps are left as gaps, never estimated.</span>
+              )}
+            </p>
+            {gaps.length > 0 ? (
+              <ul className="flex flex-wrap gap-1.5">
+                {gaps.map((item) => (
+                  <li key={item.key}>
+                    <span className="inline-flex rounded-full bg-amber-400/15 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                      {item.label} — {item.detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] font-medium text-teal-700 dark:text-teal-300">
+                Checklist complete for a routine consultation. This is not a statement of clinical completeness.
+              </p>
+            )}
+          </div>
+        </div>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Today's medications */}

@@ -48,3 +48,5 @@ supabase/snippets
 # Local reference assets and the raw specification (contains personal credentials;
 # the sanitised copy lives in docs/specification.md)
 sampleAssetsnRes/
+.vercel
+.env*

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Bone,
@@ -15,6 +15,7 @@ import {
   Moon,
   NotebookPen,
   Pill,
+  Search,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -27,6 +28,7 @@ import { useData } from '@/data/DataProvider'
 import { useTheme } from '@/hooks/useTheme'
 import { useToast } from '@/hooks/useToast'
 import { Badge, Button, IconButton, Modal } from '@/components/ui'
+import { CommandPalette } from '@/components/layout/CommandPalette'
 import { cn, formatRelative } from '@/lib/utils'
 
 interface NavItem {
@@ -144,6 +146,26 @@ export const AppShell = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const [moreOpen, setMoreOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // Ctrl/⌘+K opens the palette from anywhere; "/" does too when not typing.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const typing =
+        event.target instanceof HTMLElement &&
+        (event.target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName))
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen((open) => !open)
+      } else if (event.key === '/' && !typing) {
+        event.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const title = useMemo(() => titleForPath(location.pathname), [location.pathname])
   const isDemo = user?.mode === 'demo' || state.data.profile.email === 'demo@myrheum.app'
@@ -220,6 +242,21 @@ export const AppShell = () => {
               ) : null}
             </div>
             <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPaletteOpen(true)}
+                className="hidden items-center gap-2 rounded-xl border border-navy-900/10 bg-card px-2.5 py-1.5 text-xs font-medium text-muted transition hover:text-ink sm:inline-flex dark:border-white/10 dark:hover:bg-white/10"
+                aria-label="Search and quick actions"
+              >
+                <Search className="size-3.5" aria-hidden />
+                <span className="hidden md:inline">Search</span>
+                <kbd className="rounded border border-navy-900/15 px-1 text-[10px] font-semibold dark:border-white/15">
+                  ⌘K
+                </kbd>
+              </button>
+              <IconButton label="Search and quick actions" onClick={() => setPaletteOpen(true)} className="sm:hidden">
+                <Search className="size-4.5" aria-hidden />
+              </IconButton>
               <SyncChip />
               <IconButton
                 label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
@@ -304,6 +341,8 @@ export const AppShell = () => {
           </ul>
         </nav>
       </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
       <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="All sections" description="Jump to any part of your journal.">
         <div className="grid grid-cols-2 gap-2">

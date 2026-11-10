@@ -80,6 +80,8 @@ export interface DoseEvent {
 export interface LabResult {
   id: string
   patientId: string
+  /** Report the result was transcribed from, when there was one. */
+  panelId?: string
   testName: string
   value: number | string
   unit: string
@@ -89,6 +91,63 @@ export interface LabResult {
   collectedAt: string
   laboratory?: string
   source: Provenance
+  notes?: string
+  createdAt: string
+}
+
+export type ImportSource = 'manual' | 'myTestRes' | 'pdf' | 'csv'
+export type ImportStatus = 'draft' | 'partial' | 'complete' | 'failed'
+
+/** One venepuncture / one printed report that groups several results. */
+export interface LabPanel {
+  id: string
+  patientId: string
+  title: string
+  collectedAt: string
+  laboratory?: string
+  source: Provenance
+  notes?: string
+  createdAt: string
+}
+
+export type AttachmentKind =
+  | 'lab-report'
+  | 'imaging'
+  | 'prescription'
+  | 'referral'
+  | 'photo'
+  | 'other'
+
+/**
+ * Metadata for a file in a private Supabase Storage bucket. The file itself
+ * never lives in this table; storage_path is always "<patient uuid>/<name>".
+ */
+export interface Attachment {
+  id: string
+  patientId: string
+  documentId?: string
+  labPanelId?: string
+  importBatchId?: string
+  storageBucket: 'medical-documents' | 'progress-photos'
+  storagePath: string
+  fileName: string
+  mimeType: string
+  byteSize?: number
+  sha256?: string
+  kind: AttachmentKind
+  capturedOn?: string
+  notes?: string
+  createdAt: string
+}
+
+/** Provenance for a set of records added together (e.g. an imported PDF). */
+export interface ImportBatch {
+  id: string
+  patientId: string
+  label: string
+  source: ImportSource
+  status: ImportStatus
+  itemCount: number
   notes?: string
   createdAt: string
 }
@@ -212,8 +271,11 @@ export interface AppData {
   medicationPlans: MedicationPlan[]
   doseEvents: DoseEvent[]
   labResults: LabResult[]
+  labPanels: LabPanel[]
   appointments: Appointment[]
   documents: MedicalDocument[]
+  attachments: Attachment[]
+  importBatches: ImportBatch[]
   photos: ProgressPhoto[]
   reminders: ReminderPreference[]
   memberships: Membership[]

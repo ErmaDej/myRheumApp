@@ -379,8 +379,11 @@ export const createDemoData = (now = new Date()): AppData => {
     medicationPlans,
     doseEvents,
     labResults: labs,
+    labPanels: [],
     appointments,
     documents,
+    attachments: [],
+    importBatches: [],
     photos: [],
     reminders: [
       {
@@ -424,8 +427,11 @@ export const emptyData = (profile: AppData['profile']): AppData => ({
   medicationPlans: [],
   doseEvents: [],
   labResults: [],
+  labPanels: [],
   appointments: [],
   documents: [],
+  attachments: [],
+  importBatches: [],
   photos: [],
   reminders: [],
   memberships: [],

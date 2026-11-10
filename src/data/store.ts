@@ -3,6 +3,9 @@ import type {
   Appointment,
   DoseEvent,
   DoseStatus,
+  Attachment,
+  ImportBatch,
+  LabPanel,
   LabResult,
   MedicationPlan,
   OutboxItem,
@@ -226,6 +229,80 @@ export class AppStore {
     this.queue('labResult', 'delete', { id })
   }
 
+  saveLabPanel(panel: LabPanel): void {
+    const exists = this.state.data.labPanels.some((item) => item.id === panel.id)
+    const labPanels = exists
+      ? this.state.data.labPanels.map((item) => (item.id === panel.id ? panel : item))
+      : [panel, ...this.state.data.labPanels]
+    this.commit({ ...this.state.data, labPanels })
+    this.save('labPanel', panel)
+  }
+
+  /**
+   * Save a whole report in one commit so the panel and its results appear
+   * together. Every result is still queued individually for sync.
+   */
+  saveLabReport(panel: LabPanel, results: LabResult[]): void {
+    const resultIds = new Set(results.map((result) => result.id))
+    const otherResults = this.state.data.labResults.filter((result) => !resultIds.has(result.id))
+    const labPanels = [
+      panel,
+      ...this.state.data.labPanels.filter((item) => item.id !== panel.id),
+    ]
+    this.commit({
+      ...this.state.data,
+      labPanels,
+      labResults: [...results, ...otherResults],
+    })
+    this.save('labPanel', panel)
+    results.forEach((result) => this.save('labResult', result))
+  }
+
+  deleteLabPanel(id: string): void {
+    this.commit({
+      ...this.state.data,
+      labPanels: this.state.data.labPanels.filter((panel) => panel.id !== id),
+      // Keep the individual results; only the grouping goes away.
+      labResults: this.state.data.labResults.map((result) =>
+        result.panelId === id ? { ...result, panelId: undefined } : result,
+      ),
+      attachments: this.state.data.attachments.map((attachment) =>
+        attachment.labPanelId === id ? { ...attachment, labPanelId: undefined } : attachment,
+      ),
+    })
+    this.queue('labPanel', 'delete', { id })
+  }
+
+  saveImportBatch(batch: ImportBatch): void {
+    const importBatches = [
+      batch,
+      ...this.state.data.importBatches.filter((item) => item.id !== batch.id),
+    ]
+    this.commit({ ...this.state.data, importBatches })
+    this.save('importBatch', batch)
+  }
+
+  /* ---------------------------- attachments -------------------------- */
+
+  // Attachment metadata is synced; the bytes go to private Supabase Storage
+  // separately, so a failed upload never leaves a row pointing at nothing.
+  saveAttachment(attachment: Attachment): void {
+    const attachments = [
+      attachment,
+      ...this.state.data.attachments.filter((item) => item.id !== attachment.id),
+    ]
+    this.commit({ ...this.state.data, attachments })
+    this.save('attachment', attachment)
+  }
+
+  deleteAttachment(id: string): void {
+    this.commit({
+      ...this.state.data,
+      attachments: this.state.data.attachments.filter((attachment) => attachment.id !== id),
+    })
+    this.queue('attachment', 'delete', { id })
+  }
+
   /* ---------------------------- appointments ------------------------- */
 
   saveAppointment(appointment: Appointment): void {
@@ -329,6 +406,11 @@ export class AppStore {
   }
 
   clearAll(data: AppData): void {
+    this.commit(data)
+  }
+
+  /** Replace local state with a merged account snapshot (no outbox writes). */
+  replaceData(data: AppData): void {
     this.commit(data)
   }
 

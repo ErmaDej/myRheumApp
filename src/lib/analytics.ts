@@ -192,3 +192,143 @@ export interface AllergyNotice {
 
 export const sideEffectNotices = (entries: SymptomEntry[]): SymptomEntry[] =>
   entries.filter((entry) => entry.sideEffects.trim().length > 0).slice(0, 5)
+
+/* ------------------------------------------------------------------ */
+/*                     flares and report readiness                     */
+/* ------------------------------------------------------------------ */
+
+export interface FlareWindow {
+  start: string
+  end: string
+  days: number
+  peak: number
+  average: number
+}
+
+const dayMeanPain = (entries: SymptomEntry[]): Map<string, number> => {
+  const buckets = new Map<string, number[]>()
+  for (const entry of entries) {
+    if (entry.pain === null || Number.isNaN(entry.pain)) continue
+    const key = entry.recordedAt.slice(0, 10)
+    const list = buckets.get(key) ?? []
+    list.push(entry.pain)
+    buckets.set(key, list)
+  }
+  return new Map(
+    [...buckets.entries()].map(([key, values]) => [key, round(mean(values)!, 1)]),
+  )
+}
+
+/**
+ * Find runs of consecutive high-pain days.
+ *
+ * A flare is a run of at least `minDays` days whose mean pain is at or above
+ * `threshold`. The default threshold (7/10) is deliberately conservative: this
+ * is a descriptive pattern in the patient's own record, not a diagnosis, and
+ * the UI labels it that way.
+ */
+export const detectFlares = (
+  entries: SymptomEntry[],
+  { threshold = 7, minDays = 2 }: { threshold?: number; minDays?: number } = {},
+): FlareWindow[] => {
+  const days = dayMeanPain(entries)
+  const ordered = [...days.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  const flares: FlareWindow[] = []
+  let run: Array<[string, number]> = []
+
+  const flush = () => {
+    if (run.length >= minDays) {
+      const values = run.map(([, value]) => value)
+      flares.push({
+        start: run[0][0],
+        end: run[run.length - 1][0],
+        days: run.length,
+        peak: Math.max(...values),
+        average: round(mean(values)!, 1),
+      })
+    }
+    run = []
+  }
+
+  for (const item of ordered) {
+    if (item[1] >= threshold) {
+      run.push(item)
+      continue
+    }
+    flush()
+  }
+  flush()
+  return flares
+}
+
+/** The most recent flare within `days`, or the longest one when none is recent. */
+export const recentFlare = (entries: SymptomEntry[], days = 30): FlareWindow | null => {
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
+  const flares = detectFlares(entries)
+  return (
+    [...flares].reverse().find((flare) => flare.end >= cutoff) ??
+    [...flares].sort((a, b) => b.days - a.days)[0] ??
+    null
+  )
+}
+
+export interface ReadinessItem {
+  key: string
+  label: string
+  detail: string
+  done: boolean
+}
+
+/**
+ * A consultation checklist derived only from recorded data. It never claims a
+ * record is clinically complete — only that the export will not have obvious gaps.
+ */
+export const reportReadiness = (data: AppData, now = new Date()): { items: ReadinessItem[]; percent: number } => {
+  const daysAgo = (iso: string) => (now.getTime() - new Date(iso).getTime()) / 86_400_000
+  const recentEntries = data.symptomEntries.filter((entry) => daysAgo(entry.recordedAt) <= 14)
+  const items: ReadinessItem[] = [
+    {
+      key: 'check-ins',
+      label: 'Check-ins in the last 14 days',
+      detail:
+        recentEntries.length >= 5
+          ? `${recentEntries.length} entries recorded`
+          : `${recentEntries.length} of 5 recommended entries`,
+      done: recentEntries.length >= 5,
+    },
+    {
+      key: 'scores',
+      label: 'A validated score in the last 60 days',
+      detail: (() => {
+        const latest = data.assessments.filter((item) => daysAgo(item.assessedAt) <= 60).length
+        return latest > 0 ? `${latest} score${latest === 1 ? '' : 's'} recorded` : 'No BASDAI, BASFI or ASDAS yet'
+      })(),
+      done: data.assessments.some((item) => daysAgo(item.assessedAt) <= 60),
+    },
+    {
+      key: 'labs',
+      label: 'A laboratory result in the last 6 months',
+      detail: (() => {
+        const latest = data.labResults.filter((item) => daysAgo(item.collectedAt) <= 180).length
+        return latest > 0 ? `${latest} result${latest === 1 ? '' : 's'} recorded` : 'No recent result recorded'
+      })(),
+      done: data.labResults.some((item) => daysAgo(item.collectedAt) <= 180),
+    },
+    {
+      key: 'medications',
+      label: 'A current medication plan',
+      detail: activePlans(data.medicationPlans).length
+        ? `${activePlans(data.medicationPlans).length} active plan${activePlans(data.medicationPlans).length === 1 ? '' : 's'}`
+        : 'No active plan recorded',
+      done: activePlans(data.medicationPlans).length > 0,
+    },
+    {
+      key: 'appointment',
+      label: 'An upcoming appointment or questions to ask',
+      detail: upcomingAppointment(data) ? 'Next visit scheduled' : 'No upcoming visit',
+      done: Boolean(upcomingAppointment(data)) || data.appointments.some((item) => item.questions.length > 0),
+    },
+  ]
+  const done = items.filter((item) => item.done).length
+  return { items, percent: Math.round((done / items.length) * 100) }
+}
