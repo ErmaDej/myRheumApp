@@ -20,6 +20,7 @@ export type MetricKey =
   | 'sleepQuality'
   | 'functionalDifficulty'
   | 'mood'
+  | 'headDeviationCm'
 
 export type ReportSectionKey = 'symptoms' | 'medications' | 'labs' | 'side-effects'
 
@@ -29,6 +30,7 @@ export interface Biodata {
   dateOfBirth?: string
   sex?: BiologicalSex
   heightCm?: number
+  headDeviationCm?: number
 }
 
 export interface TrackingPreferences {
@@ -91,6 +93,7 @@ export const METRIC_OPTIONS: Array<{ key: MetricKey; label: string; hint: string
   { key: 'sleepQuality', label: 'Sleep quality', hint: '0–10 scale' },
   { key: 'functionalDifficulty', label: 'Functional difficulty', hint: '0–10 scale' },
   { key: 'mood', label: 'Mood', hint: '0–10 scale' },
+  { key: 'headDeviationCm', label: 'Head deviation from wall (cm)', hint: 'How far your head deviated from a wall when standing attached to the wall, measured by your doctor' },
 ]
 
 export const QUESTIONNAIRE_OPTIONS: Array<{ key: Instrument; label: string; hint: string }> = [
@@ -125,7 +128,7 @@ export const DEFAULT_TRACKING_PREFERENCES: TrackingPreferences = {
   metrics: ['pain', 'stiffnessMinutes', 'fatigue', 'sleepQuality', 'functionalDifficulty', 'mood'],
   questionnaires: ['BASDAI', 'BASFI', 'ASDAS'],
   reportSections: ['symptoms', 'medications', 'labs', 'side-effects'],
-  biodata: {},
+  biodata: { headDeviationCm: undefined },
 }
 
 const STORAGE_PREFIX = 'myrheumapp.tracking.v1'
@@ -153,10 +156,13 @@ const normaliseBiodata = (value: unknown): Biodata => {
   const sex = sexOptions.includes(raw.sex as BiologicalSex) ? (raw.sex as BiologicalSex) : undefined
   const height = Number(raw.heightCm)
   const heightCm = Number.isFinite(height) && height > 0 && height < 300 ? height : undefined
+  const headDeviation = Number(raw.headDeviationCm)
+  const headDeviationCm = Number.isFinite(headDeviation) && headDeviation >= 0 && headDeviation <= 30 ? headDeviation : undefined
   return {
     ...(dateOfBirth ? { dateOfBirth } : {}),
     ...(sex ? { sex } : {}),
     ...(heightCm !== undefined ? { heightCm } : {}),
+    ...(headDeviationCm !== undefined ? { headDeviationCm } : {}),
   }
 }
 

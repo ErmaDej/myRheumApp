@@ -56,6 +56,7 @@ export const Measurements = () => {
   const [instrument, setInstrument] = useState<Instrument>('BASDAI')
   const [answers, setAnswers] = useState<Answers>({})
   const [crp, setCrp] = useState('')
+  const [headDeviation, setHeadDeviation] = useState<number | undefined>(undefined)
   const [outcome, setOutcome] = useState<ScoreOutcome | null>(null)
 
   const questions = instrumentQuestions(instrument)
@@ -234,6 +235,52 @@ export const Measurements = () => {
                 </div>
               )
             })}
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-ink">Head deviation from wall</p>
+              <Badge tone="teal">cm</Badge>
+            </div>
+            <div>
+              <input
+                type="range"
+                min={0}
+                max={30}
+                step={1}
+                value={headDeviation ?? 0}
+                onChange={(event) => {
+                  const next = Number(event.target.value)
+                  setAnswers((prev) => ({ ...prev, headDeviation: next }))
+                  setHeadDeviation(next)
+                  setOutcome(null)
+                }}
+                aria-label="Head deviation from wall in cm"
+                aria-valuetext={headDeviation === undefined ? 'Not set' : `${headDeviation} cm`}
+                className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full bg-navy-900/10 dark:bg-white/15"
+                style={{
+                  background:
+                    headDeviation === undefined
+                      ? undefined
+                      : `linear-gradient(to right, var(--color-teal-500) ${(headDeviation / 30) * 100}%, transparent ${(headDeviation / 30) * 100}%)`,
+                }}
+              />
+              <Input
+                type="number"
+                min={0}
+                max={30}
+                step="0.1"
+                value={headDeviation !== undefined ? String(headDeviation) : ''}
+                onChange={(event) => {
+                  const next = event.target.value === '' ? undefined : Number(event.target.value)
+                  setAnswers((prev) => ({ ...prev, headDeviation: next }))
+                  setHeadDeviation(next)
+                  setOutcome(null)
+                }}
+                aria-label="Head deviation from wall in cm"
+                className="mt-2 max-w-40"
+              />
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">

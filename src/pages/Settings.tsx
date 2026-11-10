@@ -288,6 +288,22 @@ export const Settings = () => {
                   }
                 />
               </Field>
+              <Field label="Head deviation from wall (cm)" htmlFor="headDeviationCm" optional hint="How far your head deviated from a wall when standing attached to the wall, as measured by your clinician">
+                <Input
+                  id="headDeviationCm"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  max={30}
+                  step="0.1"
+                  value={preferences.biodata.headDeviationCm ?? ''}
+                  onChange={(event) =>
+                    tracking.setBiodata({
+                      headDeviationCm: event.target.value === '' ? undefined : Number(event.target.value),
+                    })
+                  }
+                />
+              </Field>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

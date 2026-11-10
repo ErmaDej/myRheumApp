@@ -151,3 +151,14 @@ reload and WCAG 2.2 AA checks.
 - PDF/CSV exports reflect only recorded data; gaps are shown, never estimated.
 - The clinic edition has schema, RLS and UI groundwork but no clinician invitation/admin UI;
   that requires a separate security and privacy review.
+
+## Head deviation tracking
+
+The app now supports tracking head deviation from wall measurements, as originally measured by your clinician during your first visit. This metric helps monitor posture changes and progress over time.
+
+- **Settings**: Add your head deviation measurement (in cm) under **Tracking preferences** → **Symptom metrics**.
+- **Measurements**: Record head deviation when completing daily check-ins using the range slider or numeric input (0–30 cm range).
+- **Exports**: Head deviation data is included in JSON backups via the tracking preferences, allowing you to maintain a historical record alongside your symptom scores and laboratory results.
+- **Reports**: The consultation summary includes head deviation alongside other symptom metrics when generating PDF reports.
+
+Measurements are stored per account on this device and are included in JSON exports. No data is sent to external services unless you configure Supabase sync.
