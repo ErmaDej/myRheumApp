@@ -236,6 +236,12 @@ export const detectFlares = (
   const flares: FlareWindow[] = []
   let run: Array<[string, number]> = []
 
+  const nextDay = (iso: string): string => {
+    const date = new Date(`${iso}T00:00:00Z`)
+    date.setUTCDate(date.getUTCDate() + 1)
+    return date.toISOString().slice(0, 10)
+  }
+
   const flush = () => {
     if (run.length >= minDays) {
       const values = run.map(([, value]) => value)
@@ -250,26 +256,29 @@ export const detectFlares = (
     run = []
   }
 
+  let previousDay: string | null = null
   for (const item of ordered) {
     if (item[1] >= threshold) {
+      // A flare is only consecutive calendar days; a gap breaks the run.
+      if (run.length > 0 && previousDay !== null && item[0] !== nextDay(previousDay)) {
+        flush()
+      }
       run.push(item)
+      previousDay = item[0]
       continue
     }
     flush()
+    previousDay = null
   }
   flush()
   return flares
 }
 
-/** The most recent flare within `days`, or the longest one when none is recent. */
+/** The most recent flare ending within `days`, or null when none is recent. */
 export const recentFlare = (entries: SymptomEntry[], days = 30): FlareWindow | null => {
   const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
   const flares = detectFlares(entries)
-  return (
-    [...flares].reverse().find((flare) => flare.end >= cutoff) ??
-    [...flares].sort((a, b) => b.days - a.days)[0] ??
-    null
-  )
+  return [...flares].reverse().find((flare) => flare.end >= cutoff) ?? null
 }
 
 export interface ReadinessItem {

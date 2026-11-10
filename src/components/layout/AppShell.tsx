@@ -168,7 +168,7 @@ export const AppShell = () => {
   }, [])
 
   const title = useMemo(() => titleForPath(location.pathname), [location.pathname])
-  const isDemo = user?.mode === 'demo' || state.data.profile.email === 'demo@myrheum.app'
+  const isDemo = user?.mode === 'demo'
 
   const handleSignOut = async () => {
     await signOut()

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Download, FileJson, FileText, Printer, ShieldCheck } from 'lucide-react'
 import { useData } from '@/data/DataProvider'
+import { useTrackingPreferences } from '@/data/preferences'
 import { useToast } from '@/hooks/useToast'
 import {
   defaultRange,
@@ -30,6 +31,8 @@ export const Reports = () => {
   const { state } = useData()
   const { toast } = useToast()
   const { data } = state
+  const { preferences } = useTrackingPreferences(data.profile.id)
+  const sections = new Set(preferences.reportSections)
 
   const [preset, setPreset] = useState<Preset>('7')
   const [start, setStart] = useState(defaultRange(7).start.slice(0, 10))
@@ -76,6 +79,7 @@ export const Reports = () => {
       // Photos are intentionally excluded from default backups because of size and sensitivity.
       photosOmitted: data.photos.length,
       reminders: data.reminders,
+      trackingPreferences: preferences,
     }
     downloadFile(
       `myrheum-backup-${todayInputValue()}.json`,
@@ -181,7 +185,13 @@ export const Reports = () => {
           <Stat label="New labs" value={summary.newLabs.length} hint="Collected in period" />
         </div>
 
-        <div className="mt-5 grid gap-5 sm:grid-cols-2">
+        <div
+          className={cn(
+            'mt-5 grid gap-5',
+            sections.has('symptoms') && sections.has('medications') && 'sm:grid-cols-2',
+          )}
+        >
+          {sections.has('symptoms') ? (
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted">Symptom summary</h3>
             <dl className="mt-2 space-y-1.5 text-xs">
@@ -198,7 +208,9 @@ export const Reports = () => {
               ))}
             </dl>
           </section>
+          ) : null}
 
+          {sections.has('medications') ? (
           <section>
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted">Medication adherence</h3>
             <div className="mt-2 space-y-1.5 text-xs">
@@ -222,9 +234,26 @@ export const Reports = () => {
               </div>
             </div>
           </section>
+          ) : null}
         </div>
 
-        {summary.sideEffects.length > 0 ? (
+        {sections.has('labs') && summary.newLabs.length > 0 ? (
+          <section className="mt-5">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-muted">New laboratory results</h3>
+            <ul className="mt-1 space-y-1 text-xs text-muted">
+              {summary.newLabs.slice(0, 8).map((lab) => (
+                <li key={lab.id} className="flex justify-between gap-3 border-b border-navy-900/5 pb-1 dark:border-white/5">
+                  <span className="truncate">{lab.testName}</span>
+                  <span className="shrink-0 font-semibold tabular-nums text-ink">
+                    {lab.value} {lab.unit}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {sections.has('side-effects') && summary.sideEffects.length > 0 ? (
           <section className="mt-5">
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted">Reported side effects</h3>
             <ul className="mt-1 space-y-1 text-xs text-muted">

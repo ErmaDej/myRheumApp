@@ -1,12 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
+  Activity,
   BellRing,
+  ClipboardList,
   CloudUpload,
   Download,
+  FileText,
+  FlaskConical,
   HardDrive,
   LockKeyhole,
   Moon,
+  Pill,
   RotateCcw,
   ShieldCheck,
   Smartphone,
@@ -17,6 +22,15 @@ import {
 import { useAuth } from '@/data/auth'
 import { useData } from '@/data/DataProvider'
 import { clearLocalState } from '@/data/localDb'
+import {
+  LAB_TESTS,
+  MEDICATIONS,
+  METRIC_OPTIONS,
+  QUESTIONNAIRE_OPTIONS,
+  REPORT_SECTIONS,
+  type BiologicalSex,
+  useTrackingPreferences,
+} from '@/data/preferences'
 import { supabaseConfigured } from '@/data/remote'
 import { usePwaInstall } from '@/hooks/usePwa'
 import { useTheme } from '@/hooks/useTheme'
@@ -36,7 +50,7 @@ import {
   Select,
   Switch,
 } from '@/components/ui'
-import { formatDate, formatRelative, todayInputValue } from '@/lib/utils'
+import { cn, formatDate, formatRelative, todayInputValue } from '@/lib/utils'
 
 const TIMEZONES = [
   'Africa/Addis_Ababa',
@@ -55,6 +69,30 @@ const REMINDER_KINDS: Array<{ kind: ReminderPreference['kind']; label: string; d
   { kind: 'check-in', label: 'Check-in nudges', description: 'A gentle daily prompt to complete your journal.' },
 ]
 
+const PreferenceChip = ({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: ReactNode
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={active}
+    className={cn(
+      'rounded-full border px-3 py-1.5 text-[11px] font-medium transition',
+      active
+        ? 'border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-500/15 dark:text-teal-200'
+        : 'border-navy-900/10 text-muted hover:bg-navy-900/5 dark:border-white/10 dark:hover:bg-white/10',
+    )}
+  >
+    {children}
+  </button>
+)
+
 export const Settings = () => {
   const { state, store } = useData()
   const { signOut, user } = useAuth()
@@ -63,6 +101,9 @@ export const Settings = () => {
   const { canInstall, isStandalone, promptInstall } = usePwaInstall()
   const navigate = useNavigate()
   const { data } = state
+  const tracking = useTrackingPreferences(data.profile.id)
+  const { preferences } = tracking
+  const [customMedication, setCustomMedication] = useState('')
 
   const [name, setName] = useState(data.profile.name)
   const [timezone, setTimezone] = useState(data.profile.timezone)
@@ -89,6 +130,11 @@ export const Settings = () => {
         discreetLockScreen: true,
       },
     [data.reminders, data.profile.id],
+  )
+
+  const allMedications = useMemo(
+    () => [...MEDICATIONS, ...preferences.medications.filter((item) => !MEDICATIONS.includes(item))],
+    [preferences.medications],
   )
 
   const saveProfile = (event: React.FormEvent) => {
@@ -154,6 +200,25 @@ export const Settings = () => {
     navigate('/login', { replace: true })
   }
 
+  const addCustomMedication = () => {
+    const medicine = customMedication.trim()
+    if (!medicine) return
+    tracking.update({
+      medications: [...preferences.medications.filter((item) => item !== medicine), medicine],
+    })
+    setCustomMedication('')
+    toast({ title: 'Medicine added to your tracked list', variant: 'success' })
+  }
+
+  const resetTracking = () => {
+    tracking.reset()
+    toast({
+      title: 'Tracking preferences reset',
+      description: 'The default laboratory tests, scales and report sections are back.',
+      variant: 'success',
+    })
+  }
+
   return (
     <div className="space-y-5">
       <SectionHeader
@@ -177,6 +242,51 @@ export const Settings = () => {
               </Field>
               <Field label="Email" htmlFor="profileEmail" hint="Managed by your account provider.">
                 <Input id="profileEmail" value={user?.email ?? data.profile.email} readOnly disabled />
+              </Field>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Date of birth" htmlFor="dateOfBirth" optional hint="Stays on this device.">
+                <Input
+                  id="dateOfBirth"
+                  type="date"
+                  max={todayInputValue()}
+                  value={preferences.biodata.dateOfBirth ?? ''}
+                  onChange={(event) => tracking.setBiodata({ dateOfBirth: event.target.value || undefined })}
+                />
+              </Field>
+              <Field label="Sex" htmlFor="sex" optional>
+                <Select
+                  id="sex"
+                  value={preferences.biodata.sex ?? ''}
+                  onChange={(event) =>
+                    tracking.setBiodata({
+                      sex: (event.target.value || undefined) as BiologicalSex | undefined,
+                    })
+                  }
+                >
+                  <option value="">Not recorded</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="intersex">Intersex</option>
+                  <option value="prefer-not-to-say">Prefer not to say</option>
+                </Select>
+              </Field>
+              <Field label="Height (cm)" htmlFor="heightCm" optional>
+                <Input
+                  id="heightCm"
+                  type="number"
+                  inputMode="decimal"
+                  min={30}
+                  max={260}
+                  step="0.1"
+                  value={preferences.biodata.heightCm ?? ''}
+                  onChange={(event) =>
+                    tracking.setBiodata({
+                      heightCm: event.target.value === '' ? undefined : Number(event.target.value),
+                    })
+                  }
+                />
               </Field>
             </div>
 
@@ -330,6 +440,137 @@ export const Settings = () => {
           </Card>
         </div>
       </div>
+
+      {/* Care plan & tracking preferences */}
+      <Card className="p-4 sm:p-5">
+        <CardHeader
+          title="Tracking preferences"
+          subtitle="Choose what matters for your case. These tune shortcuts and report sections; they never change clinical validity."
+          action={<ClipboardList className="size-4 text-muted" aria-hidden />}
+        />
+
+        <div className="mt-4 grid gap-5 lg:grid-cols-2">
+          <section>
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
+              <FlaskConical className="size-3.5" aria-hidden /> Laboratory tests
+            </h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">
+              Tracked tests appear as one-tap shortcuts when adding a result.
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {LAB_TESTS.map((test) => (
+                <PreferenceChip
+                  key={test.name}
+                  active={preferences.labTests.includes(test.name)}
+                  onClick={() => tracking.toggleLabTest(test.name)}
+                >
+                  {test.name}
+                </PreferenceChip>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
+              <Pill className="size-3.5" aria-hidden /> Medicines
+            </h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">
+              Add only what has been prescribed. A shortcut never creates a prescription or a dose.
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {allMedications.map((medicine) => (
+                <PreferenceChip
+                  key={medicine}
+                  active={preferences.medications.includes(medicine)}
+                  onClick={() => tracking.toggleMedication(medicine)}
+                >
+                  {medicine}
+                </PreferenceChip>
+              ))}
+            </div>
+            <div className="mt-2.5 flex gap-2">
+              <Input
+                value={customMedication}
+                onChange={(event) => setCustomMedication(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addCustomMedication()
+                  }
+                }}
+                placeholder="Another prescribed medicine"
+                aria-label="Add another prescribed medicine"
+                className="max-w-64"
+              />
+              <Button variant="secondary" size="sm" onClick={addCustomMedication}>
+                Add
+              </Button>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
+              <Activity className="size-3.5" aria-hidden /> Symptom metrics
+            </h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">
+              Keep the scales that reflect your case. All recorded values remain in exports.
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {METRIC_OPTIONS.map((metric) => (
+                <PreferenceChip
+                  key={metric.key}
+                  active={preferences.metrics.includes(metric.key)}
+                  onClick={() => tracking.toggleMetric(metric.key)}
+                >
+                  {metric.label}
+                </PreferenceChip>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
+              <FileText className="size-3.5" aria-hidden /> Questionnaires & reports
+            </h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">
+              Questionnaires stay available here; unchecking one only hides its shortcut.
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {QUESTIONNAIRE_OPTIONS.map((questionnaire) => (
+                <PreferenceChip
+                  key={questionnaire.key}
+                  active={preferences.questionnaires.includes(questionnaire.key)}
+                  onClick={() => tracking.toggleQuestionnaire(questionnaire.key)}
+                >
+                  {questionnaire.label}
+                </PreferenceChip>
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-muted">Report sections to include:</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {REPORT_SECTIONS.map((section) => (
+                <PreferenceChip
+                  key={section.key}
+                  active={preferences.reportSections.includes(section.key)}
+                  onClick={() => tracking.toggleReportSection(section.key)}
+                >
+                  {section.label}
+                </PreferenceChip>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-navy-900/5 pt-3 dark:border-white/5">
+          <p className="flex items-center gap-1.5 text-[11px] text-muted">
+            <ShieldCheck className="size-3.5 shrink-0" aria-hidden />
+            Saved on this device for this account. Biodata and preferences are included in JSON exports.
+          </p>
+          <Button variant="secondary" size="sm" onClick={resetTracking}>
+            <RotateCcw className="size-3.5" aria-hidden /> Reset to defaults
+          </Button>
+        </div>
+      </Card>
 
       {/* Install + sync */}
       <div className="grid gap-4 lg:grid-cols-2">

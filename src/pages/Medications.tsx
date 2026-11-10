@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Check, Clock3, Pencil, Pill, Plus, ShieldAlert, SkipForward, TriangleAlert } from 'lucide-react'
 import { useData } from '@/data/DataProvider'
+import { useTrackingPreferences } from '@/data/preferences'
 import { useToast } from '@/hooks/useToast'
 import type { DoseEvent, MedicationPlan, MedicationStatus } from '@/data/types'
 import { adherenceRate, dosesForDay, latestByPlan } from '@/lib/analytics'
@@ -74,6 +75,7 @@ export const Medications = () => {
   const { state, store } = useData()
   const { toast } = useToast()
   const { data } = state
+  const { preferences } = useTrackingPreferences(data.profile.id)
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<MedicationPlan | null>(null)
@@ -432,6 +434,34 @@ export const Medications = () => {
         wide
       >
         <form onSubmit={savePlan} className="space-y-4">
+          {preferences.medications.length > 0 ? (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Your tracked medicines
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {preferences.medications.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => update('name', name)}
+                    className={cn(
+                      'rounded-full border px-3 py-1.5 text-[11px] font-medium transition',
+                      form.name === name
+                        ? 'border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-500/15 dark:text-teal-200'
+                        : 'border-navy-900/10 text-muted hover:bg-navy-900/5 dark:border-white/10 dark:hover:bg-white/10',
+                    )}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-muted">
+                A shortcut only fills the name. Dose, route and schedule still come from the prescription.
+              </p>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Medication name" htmlFor="planName">
               <Input

@@ -671,15 +671,25 @@ export const fetchRemoteSnapshot = async (): Promise<RemoteSnapshot | null> => {
  * Merge a remote snapshot into local state. Same-id remote rows win; rows that
  * exist only locally are kept so an unsynced offline entry is never dropped.
  */
+const DEMO_PATIENT_ID = 'patient_demo'
+
+const isDemoRow = (row: { id?: string; patientId?: string }): boolean =>
+  row.id === DEMO_PATIENT_ID || row.patientId === DEMO_PATIENT_ID
+
+const isDemoProfile = (profile: Profile | null): boolean =>
+  profile !== null && (profile.id === DEMO_PATIENT_ID || profile.email === 'demo@myrheum.app')
+
 export const mergeRemoteSnapshot = (local: AppData, remote: RemoteSnapshot): AppData => {
   const merge = <T extends { id: string }>(localRows: T[], remoteRows: T[]): T[] => {
-    const remoteIds = new Set(remoteRows.map((row) => row.id))
-    return [...remoteRows, ...localRows.filter((row) => !remoteIds.has(row.id))]
+    const cleanLocal = localRows.filter((row) => !isDemoRow(row as { id?: string; patientId?: string }))
+    const cleanRemote = remoteRows.filter((row) => !isDemoRow(row as { id?: string; patientId?: string }))
+    const remoteIds = new Set(cleanRemote.map((row) => row.id))
+    return [...cleanRemote, ...cleanLocal.filter((row) => !remoteIds.has(row.id))]
   }
 
   return {
     ...local,
-    profile: remote.profile ?? local.profile,
+    profile: isDemoProfile(remote.profile) ? local.profile : (remote.profile ?? local.profile),
     symptomEntries: merge(local.symptomEntries, remote.symptomEntries),
     assessments: merge(local.assessments, remote.assessments),
     medicationPlans: merge(local.medicationPlans, remote.medicationPlans),

@@ -406,6 +406,11 @@ export class AppStore {
   }
 
   clearAll(data: AppData): void {
+    // Drop any queued mutations from the previous account so demo edits are
+    // never pushed into a real Supabase account.
+    const previousOutbox = this.state.outbox
+    this.state = { ...this.state, outbox: [] }
+    previousOutbox.forEach((item) => void this.options.dequeue?.(item.id))
     this.commit(data)
   }
 

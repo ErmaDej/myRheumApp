@@ -18,10 +18,7 @@ const withLabsAndPanel = (overrides: Partial<any> = {}): any => ({
   labPanels: [
     { id: 'panel_1', patientId: profile.id, title: 'CRP draw', collectedAt: '2026-11-07T06:45:00.000Z', laboratory: 'Demo Lab', source: 'imported', notes: '', createdAt: '2026-11-07T12:00:00.000Z' },
   ],
-  labResults: [
-    ...(overrides.labResults || []),
-    { id: 'lab_crp_panel', patientId: profile.id, testName: 'C-reactive protein', value: 7.8, unit: 'mg/L', referenceLow: 0, referenceHigh: 5, referenceText: '0–5 mg/L', panelId: 'panel_1', collectedAt: '2026-11-07T06:45:00.000Z', laboratory: 'Demo Lab', source: 'imported', notes: '', createdAt: '2026-11-07T12:00:00.000Z' },
-  ],
+  labResults: overrides.labResults !== undefined ? overrides.labResults : withLabs({}).labResults,
 })
 
 describe('report readiness with new entities', () => {

@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Calculator, ClipboardList, Info, TriangleAlert } from 'lucide-react'
 import { useData } from '@/data/DataProvider'
+import { QUESTIONNAIRE_OPTIONS, useTrackingPreferences } from '@/data/preferences'
 import { useToast } from '@/hooks/useToast'
 import {
   ASDAS_QUESTIONS,
@@ -44,6 +45,13 @@ export const Measurements = () => {
   const { state, store } = useData()
   const { toast } = useToast()
   const { data } = state
+  const { preferences } = useTrackingPreferences(data.profile.id)
+  const availableInstruments = useMemo(() => {
+    const tracked = QUESTIONNAIRE_OPTIONS.filter((item) =>
+      preferences.questionnaires.includes(item.key),
+    )
+    return tracked.length > 0 ? tracked : QUESTIONNAIRE_OPTIONS
+  }, [preferences.questionnaires])
 
   const [instrument, setInstrument] = useState<Instrument>('BASDAI')
   const [answers, setAnswers] = useState<Answers>({})
@@ -51,6 +59,16 @@ export const Measurements = () => {
   const [outcome, setOutcome] = useState<ScoreOutcome | null>(null)
 
   const questions = instrumentQuestions(instrument)
+
+  // If the selected questionnaire is hidden in Settings, move to a tracked one.
+  useEffect(() => {
+    if (!availableInstruments.some((item) => item.key === instrument)) {
+      setInstrument(availableInstruments[0].key)
+      setAnswers({})
+      setCrp('')
+      setOutcome(null)
+    }
+  }, [availableInstruments, instrument])
 
   const history = useMemo(
     () =>
@@ -145,11 +163,7 @@ export const Measurements = () => {
           label="Questionnaire"
           value={instrument}
           onChange={(value) => switchInstrument(value as Instrument)}
-          options={[
-            { value: 'BASDAI', label: 'BASDAI' },
-            { value: 'BASFI', label: 'BASFI' },
-            { value: 'ASDAS', label: 'ASDAS' },
-          ]}
+          options={availableInstruments.map((item) => ({ value: item.key, label: item.label }))}
         />
       </div>
 

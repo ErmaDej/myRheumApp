@@ -9,9 +9,11 @@ import {
 } from 'react'
 import { createAppStore, type AppState, type AppStore } from '@/data/store'
 import { createDemoData, emptyData } from '@/data/seed'
-import { readLocalState, readOutbox } from '@/data/localDb'
+import { clearLocalState, readLocalState, readOutbox } from '@/data/localDb'
+import type { OutboxItem } from '@/data/types'
 import {
   fetchRemoteSnapshot,
+  getRemoteUser,
   mergeRemoteSnapshot,
   pushOutboxItem,
   supabaseConfigured,
@@ -28,6 +30,16 @@ interface DataContextValue {
 }
 
 const DataContext = createContext<DataContextValue | null>(null)
+
+/** Demo records must never be pushed into or merged into a real account. */
+const isDemoOutboxItem = (item: OutboxItem): boolean => {
+  const payload = (item.payload ?? {}) as { patientId?: string; id?: string; email?: string }
+  if (payload.patientId === 'patient_demo') return true
+  if (item.entity === 'profile' && (payload.id === 'patient_demo' || payload.email === 'demo@myrheum.app')) {
+    return true
+  }
+  return false
+}
 
 export const DataProvider = ({
   children,
@@ -58,7 +70,38 @@ export const DataProvider = ({
     void (async () => {
       const [local, outbox] = await Promise.all([readLocalState(), readOutbox()])
       if (cancelled) return
-      await store.hydrate(local, outbox)
+
+      // When a real Supabase session exists, only reuse a cached record that
+      // belongs to that same account (so offline reads still work). Demo data
+      // or another account's record is discarded instead of leaking in.
+      if (supabaseConfigured) {
+        const remote = await getRemoteUser()
+        if (cancelled) return
+        if (remote) {
+          const cleanOutbox = outbox.filter((item) => !isDemoOutboxItem(item))
+          if (local && local.profile.id === remote.id) {
+            await store.hydrate(local, cleanOutbox)
+            return
+          }
+
+          const profile = {
+            id: remote.id,
+            name: remote.email.split('@')[0] ?? 'Patient',
+            email: remote.email,
+            timezone: 'Africa/Addis_Ababa',
+            units: 'metric' as const,
+            consentGiven: false,
+            onboardingComplete: false,
+            createdAt: new Date().toISOString(),
+          }
+          await store.hydrate(emptyData(profile), [])
+          void clearLocalState()
+          return
+        }
+      }
+
+      const cleanOutbox = outbox.filter((item) => !isDemoOutboxItem(item))
+      await store.hydrate(local, cleanOutbox)
     })()
 
     return () => {
@@ -84,6 +127,14 @@ export const DataProvider = ({
         createdAt: new Date().toISOString(),
       }
       store.clearAll(emptyData(profile))
+      // Purge persisted demo state and any queued demo mutations.
+      void clearLocalState()
+    }
+
+    // Re-entering the synthetic preview always restores the demo record, even
+    // after a real account was open in the same browser.
+    if (user?.mode === 'demo' && profileId !== 'patient_demo') {
+      store.resetToDemo()
     }
   }, [user, snapshot.hydrated, snapshot.data.profile.id, store])
 
@@ -164,7 +215,7 @@ export const DataProvider = ({
 
 export const useData = (): DataContextValue => {
   const context = useContext(DataContext)
-  if (!context) throw new Error('useData must be used inside DataProvider')
+  if (!context) throw new Error('useData must be inside DataProvider')
   return context
 }
 

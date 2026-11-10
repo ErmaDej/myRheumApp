@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronDown, NotebookPen, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import { useData } from '@/data/DataProvider'
+import { useTrackingPreferences } from '@/data/preferences'
 import { useToast } from '@/hooks/useToast'
 import type { SymptomEntry } from '@/data/types'
 import {
@@ -72,6 +73,7 @@ export const HealthJournal = () => {
   const { state, store } = useData()
   const { toast } = useToast()
   const { data } = state
+  const { preferences } = useTrackingPreferences(data.profile.id)
 
   const [form, setForm] = useState<FormState>(blankForm)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -191,61 +193,79 @@ export const HealthJournal = () => {
               />
             </Field>
 
-            <div className="space-y-4 rounded-2xl bg-navy-900/[0.035] p-3.5 dark:bg-white/5">
-              <RangeSlider
-                label="Overall pain"
-                value={form.pain}
-                onChange={(value) => update('pain', value)}
-                lowLabel="0 — no pain"
-                highLabel="10 — worst imaginable"
-              />
-              <RangeSlider
-                label="Fatigue"
-                value={form.fatigue}
-                onChange={(value) => update('fatigue', value)}
-                lowLabel="0 — none"
-                highLabel="10 — exhausted"
-              />
-              <RangeSlider
-                label="Sleep quality"
-                value={form.sleepQuality}
-                onChange={(value) => update('sleepQuality', value)}
-                lowLabel="0 — very poor"
-                highLabel="10 — excellent"
-              />
-              <RangeSlider
-                label="Functional difficulty"
-                value={form.functionalDifficulty}
-                onChange={(value) => update('functionalDifficulty', value)}
-                lowLabel="0 — none"
-                highLabel="10 — unable"
-              />
-              <RangeSlider
-                label="Mood / well-being"
-                value={form.mood}
-                onChange={(value) => update('mood', value)}
-                lowLabel="0 — very low"
-                highLabel="10 — very good"
-              />
-            </div>
+            {preferences.metrics.some((metric) => metric !== 'stiffnessMinutes') ? (
+              <div className="space-y-4 rounded-2xl bg-navy-900/[0.035] p-3.5 dark:bg-white/5">
+                {preferences.metrics.includes('pain') ? (
+                  <RangeSlider
+                    label="Overall pain"
+                    value={form.pain}
+                    onChange={(value) => update('pain', value)}
+                    lowLabel="0 — no pain"
+                    highLabel="10 — worst imaginable"
+                  />
+                ) : null}
+                {preferences.metrics.includes('fatigue') ? (
+                  <RangeSlider
+                    label="Fatigue"
+                    value={form.fatigue}
+                    onChange={(value) => update('fatigue', value)}
+                    lowLabel="0 — none"
+                    highLabel="10 — exhausted"
+                  />
+                ) : null}
+                {preferences.metrics.includes('sleepQuality') ? (
+                  <RangeSlider
+                    label="Sleep quality"
+                    value={form.sleepQuality}
+                    onChange={(value) => update('sleepQuality', value)}
+                    lowLabel="0 — very poor"
+                    highLabel="10 — excellent"
+                  />
+                ) : null}
+                {preferences.metrics.includes('functionalDifficulty') ? (
+                  <RangeSlider
+                    label="Functional difficulty"
+                    value={form.functionalDifficulty}
+                    onChange={(value) => update('functionalDifficulty', value)}
+                    lowLabel="0 — none"
+                    highLabel="10 — unable"
+                  />
+                ) : null}
+                {preferences.metrics.includes('mood') ? (
+                  <RangeSlider
+                    label="Mood / well-being"
+                    value={form.mood}
+                    onChange={(value) => update('mood', value)}
+                    lowLabel="0 — very low"
+                    highLabel="10 — very good"
+                  />
+                ) : null}
+              </div>
+            ) : null}
 
-            <Field
-              label="Morning stiffness duration"
-              htmlFor="stiffness"
-              hint="In minutes. Leave blank if you did not have stiffness."
-              optional
-            >
-              <Input
-                id="stiffness"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={1440}
-                placeholder="e.g. 25"
-                value={form.stiffnessMinutes}
-                onChange={(event) => update('stiffnessMinutes', event.target.value)}
-              />
-            </Field>
+            {preferences.metrics.includes('stiffnessMinutes') ? (
+              <Field
+                label="Morning stiffness duration"
+                htmlFor="stiffness"
+                hint="In minutes. Leave blank if you did not have stiffness."
+                optional
+              >
+                <Input
+                  id="stiffness"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={1440}
+                  placeholder="e.g. 25"
+                  value={form.stiffnessMinutes}
+                  onChange={(event) => update('stiffnessMinutes', event.target.value)}
+                />
+              </Field>
+            ) : null}
+
+            <p className="text-[10px] leading-relaxed text-muted">
+              Visible scales follow your tracking preferences. Hidden scales keep any previously recorded values.
+            </p>
 
             <details className="group rounded-2xl border border-navy-900/10 dark:border-white/10">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-3 text-sm font-medium text-ink">

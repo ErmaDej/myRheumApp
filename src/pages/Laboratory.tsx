@@ -11,6 +11,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useData } from '@/data/DataProvider'
+import { labTestUnit, useTrackingPreferences } from '@/data/preferences'
 import { useToast } from '@/hooks/useToast'
 import { AttachmentField, AttachmentList } from '@/components/attachments/AttachmentUpload'
 import { supabaseConfigured, uploadAttachmentFile } from '@/data/remote'
@@ -123,6 +124,8 @@ export const Laboratory = () => {
   const [importing, setImporting] = useState(false)
   const [params, setParams] = useSearchParams()
   const [expandedPanel, setExpandedPanel] = useState<string | null>(null)
+  const [trackedOnly, setTrackedOnly] = useState(false)
+  const { preferences } = useTrackingPreferences(data.profile.id)
 
   // The command palette links here with ?new=1 / ?import=1.
   useEffect(() => {
@@ -142,7 +145,11 @@ export const Laboratory = () => {
   )
 
   const latest = useMemo(() => latestLabs(data.labResults), [data.labResults])
-  const activeTest = selectedTest ?? latest[0]?.testName ?? null
+  const trackedTests = useMemo(() => new Set(preferences.labTests), [preferences.labTests])
+  const visibleLatest = trackedOnly
+    ? latest.filter((lab) => trackedTests.has(lab.testName))
+    : latest
+  const activeTest = selectedTest ?? visibleLatest[0]?.testName ?? latest[0]?.testName ?? null
   const series = useMemo(
     () => (activeTest ? labSeries(data.labResults, activeTest) : []),
     [data.labResults, activeTest],
@@ -343,19 +350,39 @@ export const Laboratory = () => {
         <Card className="p-4 sm:p-5">
           <CardHeader
             title="Latest by test"
-            subtitle={`${latest.length} distinct test${latest.length === 1 ? '' : 's'} recorded`}
-            action={<FlaskConical className="size-4 text-muted" aria-hidden />}
+            subtitle={
+              trackedOnly
+                ? `${visibleLatest.length} tracked of ${latest.length} recorded`
+                : `${latest.length} distinct test${latest.length === 1 ? '' : 's'} recorded`
+            }
+            action={
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant={trackedOnly ? 'secondary' : 'ghost'}
+                  size="sm"
+                  aria-pressed={trackedOnly}
+                  onClick={() => setTrackedOnly((value) => !value)}
+                >
+                  Tracked
+                </Button>
+                <FlaskConical className="size-4 text-muted" aria-hidden />
+              </div>
+            }
           />
           <div className="mt-3 space-y-2">
-            {latest.length === 0 ? (
+            {visibleLatest.length === 0 ? (
               <EmptyState
                 icon={<FlaskConical className="size-5" aria-hidden />}
-                title="No laboratory results yet"
-                description="Add CRP, ESR, full blood count or any result exactly as reported, with its unit."
+                title={trackedOnly && latest.length > 0 ? 'No tracked test recorded yet' : 'No laboratory results yet'}
+                description={
+                  trackedOnly && latest.length > 0
+                    ? 'Choose your tracked tests in Settings, or add a result with one tap from the tracked list.'
+                    : 'Add CRP, ESR, full blood count or any result exactly as reported, with its unit.'
+                }
                 action={<Button size="sm" onClick={() => setOpen(true)}>Add first result</Button>}
               />
             ) : (
-              latest.map((lab) => {
+              visibleLatest.map((lab) => {
                 const out = isOutOfRange(lab)
                 return (
                   <button
@@ -373,6 +400,7 @@ export const Laboratory = () => {
                       <p className="truncate text-sm font-medium text-ink">{lab.testName}</p>
                       <p className="text-[11px] text-muted">
                         {formatDate(lab.collectedAt)} · ref {rangeLabel(lab)}
+                        {trackedTests.has(lab.testName) ? ' · tracked' : ''}
                       </p>
                     </div>
                     <div className="text-right">
@@ -591,6 +619,33 @@ export const Laboratory = () => {
         wide
       >
         <form onSubmit={save} className="space-y-4">
+          {preferences.labTests.length > 0 ? (
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Tracked tests</p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {preferences.labTests.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => {
+                      update('testName', name)
+                      const unit = labTestUnit(name)
+                      if (unit) update('unit', unit)
+                    }}
+                    className={cn(
+                      'rounded-full border px-3 py-1.5 text-[11px] font-medium transition',
+                      form.testName === name
+                        ? 'border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-500/15 dark:text-teal-200'
+                        : 'border-navy-900/10 text-muted hover:bg-navy-900/5 dark:border-white/10 dark:hover:bg-white/10',
+                    )}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Test name" htmlFor="testName">
               <Input

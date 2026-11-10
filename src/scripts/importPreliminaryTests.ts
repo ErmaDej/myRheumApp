@@ -1,6 +1,6 @@
 import type { AppData, SymptomEntry } from '@/data/types'
+import type { AppStore } from '@/data/store'
 import { createDemoData } from '@/data/seed'
-import { useData } from '@/data/DataProvider'
 import { pushOutbox } from '@/data/localDb'
 
 const nextId = (prefix: string): string => {
@@ -63,8 +63,7 @@ const mergeSymptoms = (
 /** Import preliminary test data from a JSON file or seed object.
  *  Merges the imported data into the app store, preserving existing data where appropriate.
  */
-export function importPreliminaryTests(importedData: Partial<AppData>): AppData {
-  const store = useData().store
+export function importPreliminaryTests(importedData: Partial<AppData>, store: AppStore): AppData {
   const current = store.getSnapshot().data
 
   const profile = importedData.profile ? { ...current.profile, ...importedData.profile } : current.profile
@@ -124,6 +123,6 @@ export function importPreliminaryTests(importedData: Partial<AppData>): AppData 
   return merged
 }
 
-export function importDemoTests(): AppData {
-  return importPreliminaryTests(createDemoData())
+export function importDemoTests(store: AppStore): AppData {
+  return importPreliminaryTests(createDemoData(), store)
 }
